@@ -1,0 +1,8 @@
+catboost_info
+dl_jobs
+*.csv
+**/*.csv
+**/*.png
+**/*.json
+**/*.joblib
+**/__pycache__
