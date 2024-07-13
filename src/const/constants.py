@@ -1,15 +1,22 @@
 import os
 import sys
-sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
+# sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
+SRC_PATH = os.getenv("EDStaticDynamic")
+sys.path.insert(1, SRC_PATH)
+import polars as pl
+
 
 # =============================================== DATA =======================================================
 # RAW_DATA = '/work/InternalMedicine/s223850/raw_data/ED Events - 11.21.23.csv'
 # RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events - 12.21.23.csv'
 # RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24.csv'
-RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 6.6.24.csv'
-CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED_EVENTS_6624_clean.joblib'
+# RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 6.6.24.csv'
+# CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED_EVENTS_6624_clean.joblib'
 
-RAW_DATA_SAMPLE = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24_sample.csv'
+RAW_DATA = os.path.join(SRC_PATH, 'ED Events Last 2 Years - compiled 6.6.24.csv')
+CLEAN_DATA = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.joblib')
+
+# RAW_DATA_SAMPLE = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24_sample.csv'
 
 WORKING_DIR = '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src'
 OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/'
@@ -33,21 +40,16 @@ TARGET = ['ED_Disposition']
 
 id_cols = ["PAT_ENC_CSN_ID", "PAT_MRN_ID", "PAT_ID"]
 target_col = ["has_admit_order"]
-static_cols = ["Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
-               "Chief_Complaint_All", "Coverage_Financial_Class_Grouper", "Procedure in the Last 4 Weeks",
-               "Has Completed Appt in Last Seven Days", "Has Hospital Encounter in Last Seven Days", "MultiRacial",
-              "Patient_Age", "Dispo_Prov_Admission_Rate", "Number of Inpatient Admissions in the last 30",
-              "Number of past appointments in last 60 days", "Number of past inpatient admissions over ED visits", "Arrived_Time",
-               "ProblemList_Sixty_Admission_YN", "ProblemList_Eighty_Admission_YN",
-               'arr_year', 'arr_month','arr_day','arr_hour', 'holiday']
 
-static_clean_cols = ["Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
-               "Chief_Complaint_All", "Coverage_Financial_Class_Grouper", "Procedure in the Last 4 Weeks",
-               "Has Completed Appt in Last Seven Days", "Has Hospital Encounter in Last Seven Days", "MultiRacial",
-              "Patient_Age", "Dispo_Prov_Admission_Rate", "Number of Inpatient Admissions in the last 30",
-              "Number of past appointments in last 60 days", "Number of past inpatient admissions over ED visits", "Arrived_Time",
-               "ProblemList_Sixty_Admission_YN", "ProblemList_Eighty_Admission_YN",
-               'arr_year', 'arr_month','arr_day','arr_hour', 'holiday']
+static_cols =     [
+         "Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
+        "cc_list", "Coverage_Financial_Class_Grouper", "Procedure in the Last 4 Weeks",
+        "Has Completed Appt in Last Seven Days", "Has Hospital Encounter in Last Seven Days", "MultiRacial",
+        "Patient_Age", "Dispo_Prov_Admission_Rate", "Number of Inpatient Admissions in the last 30 Days",
+        "Number of past appointments in last 60 days", "Number of past inpatient admissions over ED visits in last three years",
+       "ProblemList_Sixty_Admission_YN", "ProblemList_Eighty_Admission_YN",
+        'arr_year', 'arr_month','arr_day','arr_hour', 'holiday' ,"Arrived_Time", 
+]
 
 dynamic_cols = [
     "Type",
@@ -95,21 +97,37 @@ vital_ranges_dict = {
 }
 
 # =============================================== Preprocessing =======================================================
-CLEAN_DATA_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/clean_target'
-# CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/clean_target/df_clean.csv'
-# CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/clean_target/df_clean.csv'
-# MISSING_VALS = { # Obselete (replaced with utils.category_mapper_static, and utils.category_mapper_dynamic)
-#     'Means_Of_Arrival': 'Car', 
-#     'Ethnicity': 'Non-Hispanic/Latino', # Contains (Declined, Unknown, *Unspecified) Need to be grouped in one group,
-#     'Coverage_Financial_Class_Grouper': 'None',
-# }
-# DIFFERENT_ENCOUNTERS = [651902046, 659362974, 671952725, 671952746, 675563577, 681239896, 
-#                         681828883, 682315360, 683950976,
-#                         686439858, 692452984] Before 12_1_23
-                
+NULL_LIST = [
+    # pl.Null,
+    None,
+    'none',
+    'null', 
+    'unknown',
+    'undefined',
+    '*unspecified',
+    'unspecified'
+]
+
+static_singleval_cat_cols = [
+        "Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
+        "Coverage_Financial_Class_Grouper",
+        'arr_month','arr_day','arr_hour', 'holiday'
+]
+
+static_multval_cat_cols = [
+    'cc_list'
+]
+static_num_cols = [
+    'arr_year',
+    "Dispo_Prov_Admission_Rate", 
+    "Number of Inpatient Admissions in the last 30 Days",
+    "Number of past appointments in last 60 days",
+    "Number of past inpatient admissions over ED visits in last three years"
+]
 # =============================================== ML =======================================================
 TRAINING_PERIOD = 8
 TESTING_PERIOD  = 4 
+
 DS_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_ds_parallel")
 ML_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_feats")
 ML_DATA_OUTPUT_ID = os.path.join(OUTPUT_DIR, "static_dynamic_feats_ID_240324")
@@ -117,3 +135,4 @@ ML_DATA_OUTPUT_ID = os.path.join(OUTPUT_DIR, "static_dynamic_feats_ID_240324")
 DL_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_dl_output")
 DL_FEATS_DIR =  os.path.join(OUTPUT_DIR, 'static_dynamic_dl_feats')
 ML_RESULTS_OUTPUT = os.path.join(OUTPUT_PROJ_DIR, "ml_results_240324")
+#===========================================================================================================

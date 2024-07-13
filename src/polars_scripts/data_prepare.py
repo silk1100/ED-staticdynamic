@@ -1,7 +1,7 @@
 import os
 import sys
 
-sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
+sys.path.insert(1, os.getenv("EDStaticDynamic"))
 import polars as pl
 import numpy as np
 from const import constants
@@ -135,6 +135,13 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
                 pl.col("MEAS_VALUE_UP")
             ).otherwise(pl.lit(None)).alias(f'MEAS_VALUE_{uq}')
             for uq in uniq_vitals
+        ]
+    )
+
+    df_trim = df_trim.with_columns(
+        [
+            pl.when(pl.col(c).is_in(constants.NULL_LIST)).then(pl.lit('null')).otherwise(pl.col(c)).alias(c)
+            for c in constants.static_singleval_cat_cols
         ]
     )
 
@@ -295,12 +302,12 @@ def create_sample_df(input_path, output_path, id_col, n_samples):
 if __name__ == "__main__":
     # df = create_sample_df(constants.RAW_DATA, constants.RAW_DATA_SAMPLE, 'PAT_ENC_CSN_ID', 10000)
     # df = read_and_clean(constants.RAW_DATA_SAMPLE, infer_length=10000)
-    # df = read_and_clean(constants.RAW_DATA, infer_length=int(20e6))
-    # with open(constants.CLEAN_DATA, 'wb') as f:
-    #     joblib.dump(df, f)
+    df = read_and_clean(constants.RAW_DATA, infer_length=int(20e6))
+    with open(constants.CLEAN_DATA, 'wb') as f:
+        joblib.dump(df, f)
     
-    with open(constants.CLEAN_DATA, 'rb') as f:
-        df = joblib.load(f)
+    # with open(constants.CLEAN_DATA, 'rb') as f:
+    #     df = joblib.load(f)
     
     '''
     [] Data should be splitted into training and testing with a sliding training window
@@ -310,9 +317,9 @@ if __name__ == "__main__":
     
     
 
-    dx_dict = create_vocabs_for_cols(df, 'dx_list', 0.99, True)
-    cc_dict = create_vocabs_for_cols(df, 'cc_list', 0.99, True)
-    ev_dict = create_vocabs_for_cols(df, 'EVENT_NAME_NORM', 0.99, False)
+    # dx_dict = create_vocabs_for_cols(df, 'dx_list', 0.99, True)
+    # cc_dict = create_vocabs_for_cols(df, 'cc_list', 0.99, True)
+    # ev_dict = create_vocabs_for_cols(df, 'EVENT_NAME_NORM', 0.99, False)
 
     # # print(f'Time taken for sequential: {time.time()-t} seconds ...')
 
