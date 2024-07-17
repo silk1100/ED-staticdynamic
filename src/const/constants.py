@@ -38,47 +38,64 @@ TARGET = ['ED_Disposition']
 # # DROPPED_FIELDS = ['PAT_MRN_ID', 'PAT_ID'] Before 12_1_23
 # DROPPED_FIELDS = ['PAT_MRN_ID', 'PAT_ID', 'Admitted_YN']
 
-id_cols = ["PAT_ENC_CSN_ID", "PAT_MRN_ID", "PAT_ID"]
+id_cols = ["PAT_ENC_CSN_ID",
+        #    "PAT_MRN_ID",
+        #    "PAT_ID"
+        ]
 target_col = ["has_admit_order"]
 
-static_cols =     [
-         "Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
+static_cols = [
+        "Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
         "cc_list", "Coverage_Financial_Class_Grouper", "Procedure in the Last 4 Weeks",
-        "Has Completed Appt in Last Seven Days", "Has Hospital Encounter in Last Seven Days", "MultiRacial",
-        "Patient_Age", "Dispo_Prov_Admission_Rate", "Number of Inpatient Admissions in the last 30 Days",
-        "Number of past appointments in last 60 days", "Number of past inpatient admissions over ED visits in last three years",
-       "ProblemList_Sixty_Admission_YN", "ProblemList_Eighty_Admission_YN",
-        'arr_year', 'arr_month','arr_day','arr_hour', 'holiday' ,"Arrived_Time", 
+        "Has Completed Appt in Last Seven Days",
+        "Has Hospital Encounter in Last Seven Days", "MultiRacial",
+        "Patient_Age", "Dispo_Prov_Admission_Rate",
+        "Number of Inpatient Admissions in the last 30 Days",
+        "Number of past appointments in last 60 days",
+        "Number of past inpatient admissions over ED visits in last three years",
+        "ProblemList_Sixty_Admission_YN", "ProblemList_Eighty_Admission_YN",
+        'arr_year', 'arr_month','arr_day', 'arr_dow', 'arr_hour', 'holiday' ,"Arrived_Time", 
+]
+
+dynamic_singleval_col =[
+    "Type_NORM",
+    "EVENT_NAME_NORM"
+]
+
+dynamic_multival_col =[
+    "dxcode_list"
 ]
 
 dynamic_cols = [
-    "Type",
-    "EVENT_NAME",
-    "MEAS_VALUE",
+    "Type_NORM",
+    "EVENT_NAME_NORM",
     "elapsed_time_min",
-    "Order_Status",
+    "event_idx",
     "ED_Location_YN",
-    "Primary_DX_ICD10",
-    "Result_Flag"
-]
-
-dynamic_clean_cols = [
-    'type_name',
-    "elapsed_time_min",
-    "ED_Location_YN",
-    "Result_Flag"
-    'MEAS_VALUE_UP',
-    'MEAS_VALUE_Weight',
+    "dxcode_list",
     'MEAS_VALUE_Temp',
+    'MEAS_VALUE_Weight',
+    'MEAS_VALUE_BP (MAP)',
+    'MEAS_VALUE_(0-10) Pain Rating: Activity',
+    'MEAS_VALUE_BMI (Calculated)',
+    'MEAS_VALUE_BSA (Dubois Calc)',
+    'MEAS_VALUE_(0-10) Pain Rating: Rest',
     'MEAS_VALUE_BP',
     'MEAS_VALUE_SpO2',
-    'MEAS_VALUE_BSA (Dubois Calc)',
-    'MEAS_VALUE_(0-10) Pain Rating: Activity',
-    'MEAS_VALUE_BP (MAP)',
-    'MEAS_VALUE_BMI (Calculated)',
-    'MEAS_VALUE_(0-10) Pain Rating: Rest',
     'MEAS_VALUE_Resp',
-    'MEAS_VALUE_Pulse'
+    'MEAS_VALUE_Pulse',
+    'Order_Status_Completed',
+    'Order_Status_Sent',
+    'Order_Status_Canceled',
+    'Result_Flag_Resulted',
+    'Result_Flag_Low',
+    'Result_Flag_Canceled',
+    'Result_Flag_Low Panic',
+    'Result_Flag_Ordered',
+    'Result_Flag_Normal',
+    'Result_Flag_High Panic',
+    'Result_Flag_Abnormal',
+    'Result_Flag_High'
 ]
 
 # ==================================================== Clean =======================================================
@@ -111,12 +128,13 @@ NULL_LIST = [
 static_singleval_cat_cols = [
         "Ethnicity", "FirstRace", "Sex", "Acuity_Level", "Means_Of_Arrival",
         "Coverage_Financial_Class_Grouper",
-        'arr_month','arr_day','arr_hour', 'holiday'
+        'arr_month','arr_day','arr_hour', 'holiday', 'arr_dow'
 ]
 
 static_multval_cat_cols = [
     'cc_list'
 ]
+
 static_num_cols = [
     'arr_year',
     "Dispo_Prov_Admission_Rate", 

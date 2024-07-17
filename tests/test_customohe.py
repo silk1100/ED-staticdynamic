@@ -1,6 +1,6 @@
 import unittest
 import polars as pl
-from src.polars_scripts.transformers import CustomOneHotEncoding
+from src.polars_scripts.static_transformers import CustomOneHotEncoding
 from src.const import constants
 
 class TestCustomOneHotEncoding(unittest.TestCase):

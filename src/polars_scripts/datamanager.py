@@ -10,6 +10,7 @@ from const import constants
 import joblib
 import datetime as dt
 
+
 class CustomCrossFold:
     def __init__(self, train_period_in_days, test_period_in_days, step_in_days, date_col):
         self.tr = train_period_in_days
@@ -71,4 +72,5 @@ if __name__ == "__main__":
         for t in time_range:
             Xtr_t = Xtr.filter(pl.col('minutes')<=t)
             Xte_t = Xte.filter(pl.col('minutes')<=t)
+            
             x = 0

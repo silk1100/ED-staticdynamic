@@ -8,10 +8,13 @@ import polars as pl
 import numpy as np
 from const import constants
 import joblib
+import time
 
 
 class CustomOneHotEncoding:
-    def __init__(self, single_val_cols, multi_val_cols, vocabthresh=100, cumprob_inc_thresh=0.99,
+    def __init__(self, single_val_cols, multi_val_cols, dep_col_dict={},
+                 skip_indp_val=set(),
+                 vocabthresh=100, cumprob_inc_thresh=0.99,
                  null_vals=[]):
         '''
             multi_val_cols are expected to be passed in a list datastructure. null values in the data should be mapped to empty list
@@ -19,8 +22,10 @@ class CustomOneHotEncoding:
         '''
         self.single_val_cols = single_val_cols
         self.multi_val_cols = multi_val_cols
+        self.dep_col_dict = dep_col_dict
         self.vocab_thr = vocabthresh
         self.inc_thr = cumprob_inc_thresh
+        self.skip_indp_val = skip_indp_val
         self.fitted = False
         self.null_vals = null_vals
 
@@ -63,8 +68,29 @@ class CustomOneHotEncoding:
             dd = df[colname].value_counts().sort(by='count', descending=True)
             vocab = self._build_vocab_col(dd, colname)
             singleval_vocab_[colname] = vocab
-    
+
         return singleval_vocab_, multival_vocab_
+
+    def _build_vocab_for_dependent_cols(self, df:pl.DataFrame,
+                                        dep_dict={'Type_NORM':['EVENT_NORM_NORM']}):
+        '''
+        indep_cols and dep_cols must be of the same size.
+        Dependencies assumes
+        ''' 
+        dep_dict_res = {}
+        for indep, dep_list in dep_dict.items():
+            vals = df[indep].value_counts().sort(by='count', descending=True)[indep]
+            dep_dict_res[indep] = {}
+            for c in dep_list:
+                dep_dict_res[indep][c] = {}
+                for val in vals:
+                    dff = df.filter(pl.col(indep)==val)
+                    if dff[c].dtype == pl.List(pl.String):
+                        colval = dff[c].explode().value_counts().sort(by='count', descending=True)
+                    else:
+                        colval = dff[c].value_counts().sort(by='count', descending=True)
+                    dep_dict_res[indep][c][val] = self._build_vocab_col(colval, c)
+        return dep_dict_res
 
     def fit(self, X: pl.DataFrame, y=None):
         for col in self.single_val_cols:
@@ -72,9 +98,19 @@ class CustomOneHotEncoding:
         
         for col in self.multi_val_cols:
             assert col in X.columns, f'{col} is supposed to be processed as a multi valued column using CustomOneHotEncoding. However it doesnt exist in the passed X'
-            
+
+        for col in self.dep_col_dict:
+            assert col in X.columns, f'{col} is supposed to be processed as an independent column using CustomOneHotEncoding. However it doesnt exist in the passed X'
+            for c in self.dep_col_dict[col]:
+                assert c in X.columns, f'{c} is supposed to be processed as a dependent valued column on {col} column using CustomOneHotEncoding. However it doesnt exist in the passed X'
+     
         # Create dictionaries
         self.singleval_vocab_, self.multi_val_vocab_ = self._build_vocab(X)
+        
+        '''
+        self.dep_vocab[{indepent_colname}][{dependent_colname}][{indepent_value}][{'depenedent_vocab'}]
+        '''
+        self.dep_vocab_ = self._build_vocab_for_dependent_cols(X, self.dep_col_dict)
         self.fitted  = True
         
         return self
@@ -97,11 +133,38 @@ class CustomOneHotEncoding:
             for v in ll:
                 X[idx, vocab.get(v, 1)] += 1
         return X
-    
-    def _update_colnames(self, colname, vocab):
+
+    def _transform_dep_cols(self,
+                            df:pl.DataFrame,
+                            indep_col: str,
+                            dep_col: str,
+                            vocab_dict:dict,
+                            prefix:str
+                            ):
+        cols = []
+        X_list = []
+        for indkey, dep_dict in vocab_dict.items():
+            if indkey in self.skip_indp_val:
+                continue
+            X = np.zeros((len(df), len(dep_dict)), dtype=np.uint16)
+            cols.extend(self._update_colnames(indkey, dep_dict, prefix))
+            for idx, row in enumerate(df.iter_rows(named=True)):
+                if row[indep_col] != indkey: continue
+                if row[dep_col] in self.null_vals:
+                    X[idx, 0] += 1
+                else:
+                    X[idx, dep_dict.get(row[dep_col], 1)] += 1
+            X_list.append(X)
+        Xstacked = np.hstack(X_list, dtype=np.uint16)
+        return Xstacked, cols
+
+    def _update_colnames(self, colname, vocab, prefix=""):
         colnames = [""]*len(vocab)
         for k, v in vocab.items():
-            colnames[v] = f"{colname}_{k}"
+            if len(prefix)==0:
+                colnames[v] = f"{colname}_{k}"
+            else:
+                colnames[v] = f"{prefix}_{colname}_{k}"
         return colnames
 
     def transform(self, X, y=None):
@@ -122,19 +185,35 @@ class CustomOneHotEncoding:
             X_multval_res.append(self._transform_mult_val(X[col], vocab))
         X_multval = np.hstack(X_multval_res) if len(X_multval_res)>0 else np.empty((len(X), 0), dtype=np.uint16)
 
+        X_dep_res = []
+        dep_colnames = []
+        for col, dep_col_dict in self.dep_vocab_.items():
+            for dep_col, indep_dep_dict in dep_col_dict.items():
+                prefix = f'{col}__{dep_col}_'
+                X_dr, coln = self._transform_dep_cols(X,
+                                            col,
+                                            dep_col,
+                                            indep_dep_dict,
+                                            prefix)
+                X_dep_res.append(X_dr)
+                dep_colnames.extend(coln)
+        X_depval = np.hstack(X_dep_res) if len(X_dep_res)>0 else np.empty((len(X), 0), dtype=np.uint16)
+
+        df_depval = pl.DataFrame(X_depval, schema=dep_colnames)
         df_singval = pl.DataFrame(X_singval, schema=s_colnames)
         df_multval = pl.DataFrame(X_multval, schema=m_colnames)
-        return pl.concat([df_singval, df_multval], how='horizontal')
+        return pl.concat([df_singval, df_multval, df_depval], how='horizontal')
 
     def fit_transform(self, X, y=None):
         self.fit(X, y)
         return self.transform(X, y)
 
 class CustomLabelEncoding:
-    def __init__(self, single_val_cols, vocabthresh=100, cumprob_inc_thresh=0.99,
+    def __init__(self, single_val_cols, dep_col_dict={}, vocabthresh=100, cumprob_inc_thresh=0.99,
                  null_vals=[]):
         self.single_val_cols = single_val_cols
         self.vocab_thr = vocabthresh
+        self.dep_col_dict = dep_col_dict
         self.inc_thr = cumprob_inc_thresh
         self.fitted = False
         self.null_vals = null_vals
@@ -175,12 +254,34 @@ class CustomLabelEncoding:
     
         return singleval_vocab_
 
+    def _build_vocab_for_dependent_cols(self, df:pl.DataFrame,
+                                        dep_dict={'Type_NORM':['EVENT_NORM_NORM']}):
+        '''
+        indep_cols and dep_cols must be of the same size.
+        Dependencies assumes
+        ''' 
+        dep_dict_res = {}
+        for indep, dep_list in dep_dict.items():
+            vals = df[indep].value_counts().sort(by='count', descending=True)[indep]
+            dep_dict_res[indep] = {}
+            for c in dep_list:
+                dep_dict_res[indep][c] = {}
+                for val in vals:
+                    dff = df.filter(pl.col(indep)==val)
+                    if dff[c].dtype == pl.List(pl.String):
+                        colval = dff[c].explode().value_counts().sort(by='count', descending=True)
+                    else:
+                        colval = dff[c].value_counts().sort(by='count', descending=True)
+                    dep_dict_res[indep][c][val] = self._build_vocab_col(colval, c)
+        return dep_dict_res
+
     def fit(self, X, y=None):
         for col in self.single_val_cols:
             assert col in X.columns, f'{col} is supposed to be processed as a single valued column using CustomOneHotEncoding. However it doesnt exist in the passed X'
             
         # Create dictionaries
         self.singleval_vocab_= self._build_vocab(X)
+        self.dep_vocab_ = self._build_vocab_for_dependent_cols(X, self.dep_col_dict)
         self.fitted  = True
         
         return self
@@ -218,8 +319,29 @@ class CustomLabelEncoding:
             X = X.with_columns(
                 expr
             )
+        
+        dep_cols = []
+        for indep, dep_dict in self.dep_vocab_.items():
+            for dep_col, val_dict in dep_dict.items():
+                newcolname = f'{indep}__{dep_col}_le'
+                dep_cols.append(newcolname)
+                X = X.with_columns(
+                    pl.lit(0).cast(pl.UInt16).alias(newcolname)
+                )
+                for indep_val, vocab_dict in val_dict.items():
+                    X = X.with_columns(
+                        pl.when(
+                            (pl.col(indep)==indep_val)&(pl.col(dep_col).is_in(self.null_vals))
+                        ).then(pl.lit(0)).when(
+                            pl.col(indep)==indep_val
+                        ).then(
+                            (pl.col(dep_col).map_elements(lambda x:vocab_dict.get(x, 1), return_dtype=pl.UInt16))
+                        ).otherwise(
+                            pl.col(newcolname)
+                        ).alias(newcolname)
+                    )
 
-        return X.select([f'{c}_le' for c in self.singleval_vocab_])
+        return X.select([f'{c}_le' for c in self.singleval_vocab_]+dep_cols)
 
     def fit_transform(self, X, y=None):
         self.fit(X, y)
@@ -241,10 +363,13 @@ def select_pat_by_arrtime(df, pat_col, arrtime_col):
 if __name__ == '__main__':
     with open(constants.CLEAN_DATA, 'rb') as f:
         df = joblib.load(f)
-    df_70_static = df.filter(pl.col("event_idx")<70).select(constants.static_cols+constants.id_cols)
+    df_70_static = df.filter(pl.col("event_idx")<70).\
+        select(constants.static_cols+constants.id_cols+['Type_NORM', 'EVENT_NAME_NORM'])
     cu = CustomOneHotEncoding(
         single_val_cols=constants.static_singleval_cat_cols,
         multi_val_cols=constants.static_multval_cat_cols,
+        dep_col_dict={'Type_NORM':['EVENT_NAME_NORM']},
+        skip_indp_val={'vitals'},
         cumprob_inc_thresh=0.99,
         null_vals=constants.NULL_LIST,
         vocabthresh=100
@@ -255,22 +380,24 @@ if __name__ == '__main__':
         cumprob_inc_thresh=0.99,
         null_vals=constants.NULL_LIST
     )
-    df_70_static = df_70_static.sort(by='Arrived_Time')
-    train_pat, test_pat = select_pat_by_arrtime(df_70_static, 'PAT_ENC_CSN_ID', 'Arrived_Time')
-    df_train = df_70_static.filter(pl.col("PAT_ENC_CSN_ID").is_in(train_pat))
-    df_test = df_70_static.filter(pl.col("PAT_ENC_CSN_ID").is_in(test_pat))
-    dftr_le = cle.fit_transform(df_train)
-    dfte_le = cle.transform(df_test)
-    x = 0
+    # df_70_static = df_70_static.sort(by='Arrived_Time')
+    # train_pat, test_pat = select_pat_by_arrtime(df_70_static, 'PAT_ENC_CSN_ID', 'Arrived_Time')
+    # df_train = df_70_static.filter(pl.col("PAT_ENC_CSN_ID").is_in(train_pat))
+    # df_test = df_70_static.filter(pl.col("PAT_ENC_CSN_ID").is_in(test_pat))
+    # dftr_le = cu.fit_transform(df_train)
+    # dfte_le = cu.transform(df_test)
+    # x = 0
     cu = CustomOneHotEncoding(
         single_val_cols=['A', 'B'],
         multi_val_cols=['C'],
+        dep_col_dict={'D':["E"]},
         cumprob_inc_thresh=0.99,
         null_vals=constants.NULL_LIST,
         vocabthresh=100
     )
     cue = CustomLabelEncoding(
-        single_val_cols=['A', 'B'],
+        single_val_cols=['A', 'B', 'D'],
+        dep_col_dict={'D':["E"]},
         cumprob_inc_thresh=0.99,
         null_vals=constants.NULL_LIST,
         vocabthresh=100
@@ -279,14 +406,18 @@ if __name__ == '__main__':
         {
             'A':['a', 'b', 'null', None, 'z', 'aa'],
             'B':[12, 12, None, 1, 15, 2],
-            'C': [[], ['a', 'c'], ['a'], ['z'], ['a', 'b', 'c'], None]
+            'C': [[], ['a', 'c'], ['a'], ['z'], ['a', 'b', 'c'], None],
+            'D':['A', 'A', 'A', 'B', 'B', 'B'],
+            'E':['AA', 'AB', 'AC', 'BD', 'BE', 'BF']
         }
     )
     dff_k = pl.DataFrame(
         {
             'A':['a', 'b', 'null', None, 'zz', '1a'],
             'B':[12, 12, None, 1, 19, 2],
-            'C': [[], ['a', 'c'], ['a'], ['k'], ['a', 'k', 'c'], None]
+            'C': [[], ['a', 'c'], ['a'], ['k'], ['a', 'k', 'c'], None],
+            'D':['A', 'A', 'A', 'B', 'B', 'B'],
+            'E':['AA', 'AB', 'AE', 'BD', 'BE', None]
         }
     )
 

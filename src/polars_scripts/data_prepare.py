@@ -33,7 +33,7 @@ def get_holiday_optimized(df, date_col):
     df_holiday.columns = [newdatecol, 'holiday']
     df_holiday[newdatecol] = df_holiday[newdatecol].dt.date
     df_holiday = pl.DataFrame(df_holiday)
-    df = df.join(df_holiday, on=newdatecol, how='inner')
+    df = df.join(df_holiday, on=newdatecol, how='outer')
     df = df.drop(newdatecol)
     if 'holiday_right' in df.columns:
         df = df.rename({'holiday_right': 'holiday'})
@@ -138,11 +138,26 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
         ]
     )
 
+    # Split Result_Flag based on different Types
+    uniq_flags = df_trim.filter(~pl.col("Result_Flag").is_null())['Result_Flag'].unique()
     df_trim = df_trim.with_columns(
-        [
-            pl.when(pl.col(c).is_in(constants.NULL_LIST)).then(pl.lit('null')).otherwise(pl.col(c)).alias(c)
-            for c in constants.static_singleval_cat_cols
-        ]
+        pl.when(
+            pl.col('Result_Flag')==val
+        ).then(
+            pl.lit(1)
+        ).otherwise(0).cast(pl.UInt16).alias(f'Result_Flag_{val}')
+        for val in uniq_flags
+    )
+
+    # Split Order_Status based on different Types
+    uniq_flags = df_trim.filter(~pl.col("Order_Status").is_null())['Order_Status'].unique()
+    df_trim = df_trim.with_columns(
+        pl.when(
+            pl.col('Order_Status')==val
+        ).then(
+            pl.lit(1)
+        ).otherwise(0).cast(pl.UInt16).alias(f'Order_Status_{val}')
+        for val in uniq_flags
     )
 
     return df_trim
@@ -224,16 +239,8 @@ def category_mappers_static(df):
     binary_cols = [c for c in df.columns if 'has' in c.lower() or 'yn' in c.lower()]
     number_cols = [c for c in df.columns if 'number' in c.lower()] 
 
-    
     eth_exp = [pl.when(pl.col('Ethnicity').is_in(['Declinded', '*Unspecified'])).\
         then(pl.lit("Unknown")).otherwise(pl.col('Ethnicity')).alias('Ethnicity')]
-    # if df['Ethnicity'].isna().sum() > 0:
-    #     df.loc[df['Ethnicity'].isna(), 'Ethnicity'] = 'Unknown'
-    # if (df['Ethnicity'] == 'Declined').sum() > 0:
-    #     df.loc[df['Ethnicity'] == 'Declined', 'Ethnicity'] = 'Unknown'
-
-    # if (df['Ethnicity'] == '*Unspecified').sum() > 0:
-    #     df.loc[df['Ethnicity'] == '*Unspecified', 'Ethnicity'] = 'Unknown'
 
     binary_col_expr = []
     for col in binary_cols:
@@ -252,34 +259,9 @@ def category_mappers_static(df):
     
     moa_expr = [pl.when(pl.col('Means_Of_Arrival').is_in(['NULL', 'Other'])).then(pl.lit(None)).\
         otherwise(pl.col('Means_Of_Arrival')).alias('Means_Of_Arrival')]
-     
-    # if df['Means_Of_Arrival'].isna().sum() > 0:
-    #     df.loc[df['Means_Of_arrival']=='NULL', 'Means_Of_Arrival'] = 'Other'
-    #     df.loc[df['Means_Of_Arrival'].isna(), 'Means_Of_Arrival'] = 'Other'
-    
-
-    # if df['Coverage_Financial_Class_Grouper'].isna().sum() > 0:
-    #     df.loc[df['Coverage_Financial_Class_Grouper'].isna(), 'Coverage_Financial_Class_Grouper'] = 'None'
-
-    # if df['Sex'].isna().sum() > 0:
-    #     df.loc[df['Sex'].isna(), 'Sex'] = 'Unknown'
-    
-    # if df['Acuity_Level'].isna().sum() > 0:
-    #     df.loc[df['Acuity_Level'].isna(), 'Acuity_Level'] = 'Unknown'
-    
-    # if df['Chief_Complaint_All'].isna().sum() > 0:
-    #     df.loc[df['Chief_Complaint_All'].isna(), 'Chief_Complaint_All'] = 'Unknown'
-    
 
     firstrace_exp = [pl.when(pl.col('FirstRace').is_in(['Unavailable/Unknown', 'Declined'])).then(pl.lit(None)).\
         otherwise(pl.col('FirstRace')).alias('FirstRace')]
-
-    # if df['FirstRace'].isna().sum() > 0:
-    #     df.loc[df['FirstRace'].isna(), 'FirstRace'] = 'Unknown'
-    # if (df['FirstRace'] == 'Unavailable/Unknown').sum() > 0:
-    #     df.loc[df['FirstRace'] == 'Unavailable/Unknown', 'FirstRace'] = 'Unknown'
-    # if (df['FirstRace'] == 'Declined').sum() > 0:
-    #     df.loc[df['FirstRace'] == 'Declined', 'FirstRace'] = 'Unknown'
 
     all_expr = eth_exp+binary_col_expr+num_col_expr+moa_expr+firstrace_exp
     df = df.with_columns(all_expr)
