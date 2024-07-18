@@ -43,23 +43,61 @@ def train_loop(
     Xpre_dynamic_tr = dynamic_preprocessor.fit_transform(X_dynamic_tr)
     Xpre_dynamic_te = dynamic_preprocessor.transform(X_dynamic_te)
     Xdtr = pl.concat([X_dynamic_tr.drop(["Type_NORM", "EVENT_NAME_NORM", "dxcode_list"]),
-                      Xpre_dynamic_tr])
+                      Xpre_dynamic_tr], how='horizontal')
     Xdte = pl.concat([X_dynamic_te.drop(["Type_NORM", "EVENT_NAME_NORM", "dxcode_list"]),
-                      Xpre_dynamic_te])
+                      Xpre_dynamic_te], how='horizontal')
+    
     Xstr = pl.concat([X_static_tr.drop(["Ethnicity", "FirstRace", "Sex", "Acuity_Level",
                                         "Means_Of_Arrival", "Coverage_Financial_Class_Grouper",
-                                        "Arrived_Time",
-                                        "arr_year", "arr_month", "arr_day", "arr_dow"])])
-    
+                                        "Arrived_Time", 'cc_list',
+                                        "arr_month", "arr_day", "arr_dow", "holiday"]), Xpre_static_tr], how='horizontal')
+    Xste = pl.concat([X_static_te.drop(["Ethnicity", "FirstRace", "Sex", "Acuity_Level",
+                                        "Means_Of_Arrival", "Coverage_Financial_Class_Grouper",
+                                        "Arrived_Time", 'cc_list',
+                                        "arr_month", "arr_day", "arr_dow", "holiday"]), Xpre_static_te], how='horizontal')
+
+    Xdtr_pat = Xdtr.group_by('PAT_ENC_CSN_ID').agg(
+        [pl.col(c).sum().alias(c) for c in Xpre_dynamic_tr.columns]+[
+            pl.col('elapsed_time_min').last().alias('elapsed_time_min'),
+            pl.col('event_idx').last().alias('event_idx'),
+            pl.col('ED_Location_YN').mean().alias('ED_Location_YN'),
+            pl.col('has_admit_order').last().alias('has_admit_order')
+        ]+[
+            pl.col(c).last().alias(c) for c in X_dynamic_tr.columns if c.startswith('MEAS')
+        ]+[
+            pl.col(c).sum().alias(c) for c in X_dynamic_tr.columns if c.startswith('Order')
+        ]+[
+            pl.col(c).sum().alias(c) for c in X_dynamic_tr.columns if c.startswith('Result')
+        ]
+    )
+    Xdte_pat = Xdte.group_by('PAT_ENC_CSN_ID').agg(
+        [pl.col(c).sum().alias(c) for c in Xpre_dynamic_tr.columns]+[
+            pl.col('elapsed_time_min').last().alias('elapsed_time_min'),
+            pl.col('event_idx').last().alias('event_idx'),
+            pl.col('ED_Location_YN').mean().alias('ED_Location_YN'),
+            pl.col('has_admit_order').last().alias('has_admit_order')
+        ]+[
+            pl.col(c).last().alias(c) for c in X_dynamic_tr.columns if c.startswith('MEAS')
+        ]+[
+            pl.col(c).sum().alias(c) for c in X_dynamic_tr.columns if c.startswith('Order')
+        ]+[
+            pl.col(c).sum().alias(c) for c in X_dynamic_tr.columns if c.startswith('Result')
+        ]
+    )
+
+
+    train_id_list = Xdtr['PAT_ENC_CSN_ID'].to_list()
+    test_id_list  = Xdte['PAT_ENC_CSN_ID'].to_list()
+
     x = 0
 
     
     
 
-
 if __name__ == "__main__":
-    with open(constants.CLEAN_DATA, 'rb') as f:
-        df = joblib.load(f)
+    # with open(constants.CLEAN_DATA, 'rb') as f:
+    #     df = joblib.load(f)
+    df = pl.read_parquet(os.path.join(MAIN_DIR, "ED_clean.parquet"))    
     ccf = CustomCrossFold(30*6, 30, 30*2, 'Arrived_Time')
     df = df.with_columns(
         (pl.col("Calculated_DateTime")-pl.col("Calculated_DateTime").first()).dt.minutes().over('PAT_ENC_CSN_ID').alias('minutes')
@@ -98,6 +136,23 @@ if __name__ == "__main__":
         cumprob_inc_thresh=0.99,
         null_vals=constants.NULL_LIST
     )
+    '''
+    - Cool milestones check to make sure that your data is alright
+    [*] Check the # of admitted vs discharged counters in your training and testing datasets
+        - Xte_t.group_by('PAT_ENC_CSN_ID').agg(pl.col('has_admit_order').last())['has_admit_order'].value_counts()
+        - Xtr_t.group_by('PAT_ENC_CSN_ID').agg(pl.col('has_admit_order').last())['has_admit_order'].value_counts()
+
+    [*] Check the training and testing span to confirm that they are covering the period you assigned during training
+        - Xtr_t['Arrived_Time'].min(); Xtr_t['Arrived_Time'].max();
+        - Xte_t['Arrived_Time'].min(); Xte_t['Arrived_Time'].max();
+        - Xtr_t['Arrived_Time'].dt.weekday().value_counts(); # Confirm that all days of the week are covered 1->7 polars
+        - Xtr_t['Arrived_Time'].dt.day().value_counts(); # Confirm that all days of the month are covered 1->31 polars
+
+    [*] Check the longest duration in the minutes to confirm that it is matching the t in time_range
+        - Xtr_t.group_by("PAT_ENC_CSN_ID").agg(pl.col('minutes').last()).max()
+    
+        
+    '''
     for Xtr, Xte in ccf.split(df):
         for t in time_range:
             Xtr_t = Xtr.filter(pl.col('minutes')<=120)

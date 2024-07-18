@@ -6,3 +6,5 @@ dl_jobs
 **/*.json
 **/*.joblib
 **/__pycache__
+**/*.parquet
+*.parquet

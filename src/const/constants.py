@@ -15,6 +15,7 @@ import polars as pl
 
 RAW_DATA = os.path.join(SRC_PATH, 'ED Events Last 2 Years - compiled 6.6.24.csv')
 CLEAN_DATA = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.joblib')
+CLEAN_DATA_PARQUET = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.parquet')
 
 # RAW_DATA_SAMPLE = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24_sample.csv'
 

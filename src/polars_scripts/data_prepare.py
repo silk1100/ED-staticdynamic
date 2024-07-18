@@ -61,6 +61,9 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
             pl.col('Arrived_Time').str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S%.f"),
             # pl.col('Calculated_DateTime').str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S%.f")
         ])
+    
+    # TODO: Remove this line once having sufficient RAM
+    # df = df.filter((pl.col('Arrived_Time').dt.year()>=2023)&(pl.col('Arrived_Time').dt.month()>=7))
 
     if df['Calculated_DateTime'].dtype == pl.String:
         df = df.with_columns([
@@ -236,7 +239,7 @@ def create_le(df, colname, vdict):
     return df
 
 def category_mappers_static(df):
-    binary_cols = [c for c in df.columns if 'has' in c.lower() or 'yn' in c.lower()]
+    binary_cols = [c for c in df.columns if 'has' in c.lower() or 'yn' in c.lower()]+['Procedure in the Last 4 Weeks']
     number_cols = [c for c in df.columns if 'number' in c.lower()] 
 
     eth_exp = [pl.when(pl.col('Ethnicity').is_in(['Declinded', '*Unspecified'])).\
@@ -282,30 +285,5 @@ def create_sample_df(input_path, output_path, id_col, n_samples):
     return df
 
 if __name__ == "__main__":
-    # df = create_sample_df(constants.RAW_DATA, constants.RAW_DATA_SAMPLE, 'PAT_ENC_CSN_ID', 10000)
-    # df = read_and_clean(constants.RAW_DATA_SAMPLE, infer_length=10000)
     df = read_and_clean(constants.RAW_DATA, infer_length=int(20e6))
-    with open(constants.CLEAN_DATA, 'wb') as f:
-        joblib.dump(df, f)
-    
-    # with open(constants.CLEAN_DATA, 'rb') as f:
-    #     df = joblib.load(f)
-    
-    '''
-    [] Data should be splitted into training and testing with a sliding training window
-    [] Model should be split based on the number of events occurred so far
-
-    '''
-    
-    
-
-    # dx_dict = create_vocabs_for_cols(df, 'dx_list', 0.99, True)
-    # cc_dict = create_vocabs_for_cols(df, 'cc_list', 0.99, True)
-    # ev_dict = create_vocabs_for_cols(df, 'EVENT_NAME_NORM', 0.99, False)
-
-    # # print(f'Time taken for sequential: {time.time()-t} seconds ...')
-
-    # tv_dict = create_vocabs_for_dep_cols(df, colnames = ['Type_NORM', 'EVENT_NAME_NORM'],
-    #                                      inc_cum_thresh=0.99, multival=False)  
-    
-    # dx_mat = create_ohe(df, 'dx_list', dx_dict)
+    df.write_parquet(constants.CLEAN_DATA_PARQUET)
