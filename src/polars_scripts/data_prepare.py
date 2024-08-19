@@ -1,7 +1,8 @@
 import os
 import sys
 
-sys.path.insert(1, os.getenv("EDStaticDynamic"))
+# sys.path.insert(1, os.getenv("EDStaticDynamic"))
+sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
 import polars as pl
 import numpy as np
 from const import constants
@@ -52,7 +53,8 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
     #     df = df.filter(pl.col('PAT_ENC_CSN_ID').is_in(rpats))
     
     
-    df = df.filter(pl.col('ED_Disposition').is_in(['Admitted', 'Discharged']))
+    # df = df.filter(pl.col('ED_Disposition').is_in(['Admitted', 'Discharged']))
+    df = df.filter(~pl.col('ED_Disposition').is_in(['Dismiss - Incorrect Chart', 'Send to L&D', 'LWBS']))
 
     df = category_mappers_static(df)
 
@@ -83,7 +85,12 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
 
     df_trim = df.with_columns(
         (pl.col('Type')=='Order - Admission').cum_sum().over('PAT_ENC_CSN_ID').alias('n_admit_orders'),
-        (pl.col('Type')=='Order - Discharge').cum_sum().over('PAT_ENC_CSN_ID').alias('n_disch_orders'),
+        ( (pl.col('Type')=='Order - Discharge')|(pl.col("EVENT_NAME").is_in([
+                'AVS Printed',
+                'Discharge AVS Print Snapshot',
+                'Discharge Status Change',
+                'FAM Discharge AVS Print Snapshot'
+            ]))).cum_sum().over('PAT_ENC_CSN_ID').alias('n_disch_orders'),
     ).filter( (pl.col('n_admit_orders')<1) & (pl.col('n_disch_orders')<1) )
 
     df_trim = df_trim.with_columns([
@@ -122,6 +129,8 @@ def read_and_clean(file, infer_length=20e6, sample_encs=0):
         (pl.col('Type_NORM')+'_'+pl.col('EVENT_NAME_NORM')).alias('type_name')
     )
     df_trim = get_holiday_optimized(df_trim, 'Arrived_Time')
+    
+    # Update the vital ranges
     for k, v in constants.vital_ranges_dict.items():
         df_trim = df_trim.with_columns(
             pl.when((pl.col('EVENT_NAME') == k)&((pl.col("MEAS_VALUE")>v[1])|(pl.col("MEAS_VALUE")<v[0])))

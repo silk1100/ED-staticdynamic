@@ -9,12 +9,13 @@ import numpy as np
 from const import constants
 import joblib
 import time
+from warnings import warn
 
 class CustomDynamicOneHotEncoding:
-    def __init__(self, single_val_cols, multi_val_cols, dep_col_dict,
-                 id_col,
-                 skip_indp_val,
-                 vocabthresh=100, cumprob_inc_thresh=0.99,
+    def __init__(self, single_val_cols, multi_val_cols, dep_col_dict, num_cols=[],
+                 id_col ='PAT_ENC_CSN_ID',
+                 skip_indp_val={'vitals'},
+                 vocabthresh=100, cumprob_inc_thresh=0.99, num_norm_methods = {},
                  null_vals=[]):
         '''
             multi_val_cols are expected to be passed in a list datastructure. null values in the data should be mapped to empty list
@@ -24,11 +25,26 @@ class CustomDynamicOneHotEncoding:
         self.single_val_cols = single_val_cols
         self.multi_val_cols = multi_val_cols
         self.dep_col_dict = dep_col_dict
+        self.num_cols = num_cols
+        self.num_norm_method = num_norm_methods
+        self._adjust_num_norm_method(['std', 'minmax'])
+
         self.vocab_thr = vocabthresh
         self.inc_thr = cumprob_inc_thresh
         self.skip_indp_val = skip_indp_val
         self.fitted = False
         self.null_vals = null_vals
+
+
+    def _adjust_num_norm_method(self, allowed_methods: list):
+        for c in self.num_cols:
+            if c not in self.num_norm_method:
+                self.num_norm_method[c] = 'std'
+                warn(f"{c} is supposed to be processed as a numerical variable. However the processing method is not "
+                     "specified in the num_norm_method dictionary. Therefore, it is assigned to 'std' ...")
+            elif self.num_norm_method[c] not in allowed_methods:
+                raise ValueError(f"Numerical preprocessing methods supproted are {allowed_methods}. "
+                                 f"{self.num_norm_method[c]} is passed for column {c} ...")
 
     def _vocab_from_list(self, inc_series):
         inc_vals = set(inc_series)
@@ -93,12 +109,27 @@ class CustomDynamicOneHotEncoding:
                     dep_dict_res[indep][c][val] = self._build_vocab_col(colval, c)
         return dep_dict_res
 
+    def _calc_norm(self, X:pl.DataFrame):
+        num_cols = {}
+        for c in self.num_cols:
+            if self.num_norm_method[c] == 'std':
+                num_cols[c] = (X[c].mean(), X[c].std(ddof=1), 'std')
+            elif self.num_norm_method[c] == 'minmax':
+                num_cols[c] = (X[c].min(), X[c].max(), 'minmax')
+            else:
+                raise ValueError(f"Normalization methods supported are ['std', 'minmax']. {self.num_norm_method} is passed ...")
+        
+        return num_cols
+
     def fit(self, X: pl.DataFrame, y=None):
         for col in self.single_val_cols:
             assert col in X.columns, f'{col} is supposed to be processed as a single valued column using CustomOneHotEncoding. However it doesnt exist in the passed X'
         
         for col in self.multi_val_cols:
             assert col in X.columns, f'{col} is supposed to be processed as a multi valued column using CustomOneHotEncoding. However it doesnt exist in the passed X'
+
+        for col in self.num_cols:
+            assert col in X.columns, f'{col} is supposed to be processed as a numerical valued column using {self.num_norm_method}. However it doesnt exist in the passed X'
 
         for col in self.dep_col_dict:
             assert col in X.columns, f'{col} is supposed to be processed as an independent column using CustomOneHotEncoding. However it doesnt exist in the passed X'
@@ -107,6 +138,7 @@ class CustomDynamicOneHotEncoding:
      
         # Create dictionaries
         self.singleval_vocab_, self.multi_val_vocab_ = self._build_vocab(X)
+        self.num_dict = self._calc_norm(X)
         
         '''
         self.dep_vocab[{indepent_colname}][{dependent_colname}][{indepent_value}][{'depenedent_vocab'}]
@@ -156,7 +188,8 @@ class CustomDynamicOneHotEncoding:
                 else:
                     X[idx, dep_dict.get(row[dep_col], 1)] += 1
             X_list.append(X)
-        Xstacked = np.hstack(X_list, dtype=np.uint16)
+        # Xstacked = np.hstack(X_list, dtype=np.uint16)
+        Xstacked = np.hstack(X_list)#, dtype=np.uint16)
         return Xstacked, cols
 
     def _update_colnames(self, colname, vocab, prefix=""):
@@ -168,9 +201,36 @@ class CustomDynamicOneHotEncoding:
                 colnames[v] = f"{prefix}_{colname}_{k}"
         return colnames
 
+
+    def _transfom_num_cols(self, X):
+        for c, (v1, v2, method) in self.num_dict.items():
+            if method == 'std':
+                if v2 == 0:
+                    X = X.with_columns(
+                        pl.lit(0).alias(f'{c}_NUMNORM')
+                    )
+                else: 
+                    X = X.with_columns(
+                        ((pl.col(c)-v1)/(v2+(1e-9))).alias(f'{c}_NUMNORM')
+                    )
+            elif method == 'minmax':
+                if v1 == v2:
+                    X = X.with_columns(
+                        pl.lit(0).alias(f'{c}_NUMNORM')
+                    )
+                else:
+                    X = X.with_columns(
+                        ((pl.col(c)-v1)/(v2-v1+1e-9)).alias(f'{c}_NUMNORM')
+                    )
+        return X
+        
+
     def transform(self, X, y=None):
         if not self.fitted:
             raise ValueError("You need to run .fit() method first")
+
+        if len(self.num_cols) > 0:
+            X = self._transfom_num_cols(X)
 
         X_singval_res = []
         s_colnames = []
@@ -203,7 +263,11 @@ class CustomDynamicOneHotEncoding:
         df_depval = pl.DataFrame(X_depval, schema=dep_colnames)
         df_singval = pl.DataFrame(X_singval, schema=s_colnames)
         df_multval = pl.DataFrame(X_multval, schema=m_colnames)
-        df_transformed = pl.concat([df_singval, df_multval, df_depval], how='horizontal')
+
+        if len(self.num_cols) > 0:
+            df_transformed = pl.concat([df_singval, df_multval, df_depval, X.select(self.num_cols)], how='horizontal')
+        else:
+            df_transformed = pl.concat([df_singval, df_multval, df_depval], how='horizontal')
         # df_transformed = pl.concat([X, df_singval, df_multval, df_depval], how='horizontal')
         # df_transformed.group_by(self.id_col).agg(
         #     [

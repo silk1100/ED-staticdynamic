@@ -1,8 +1,10 @@
 import os
 import sys
 
-MAIN_DIR = os.getenv("EDStaticDynamic")
-sys.path.insert(1, MAIN_DIR)
+# MAIN_DIR = os.getenv("EDStaticDynamic")
+# sys.path.insert(1, MAIN_DIR)
+
+sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
 
 import polars as pl
 import numpy as np
@@ -12,12 +14,14 @@ import datetime as dt
 
 
 class CustomCrossFold:
+    '''
+     
+    '''
     def __init__(self, train_period_in_days, test_period_in_days, step_in_days, date_col):
         self.tr = train_period_in_days
         self.te = test_period_in_days
         self.step = step_in_days 
         self.date_col = date_col
-
 
     def split(self, X,  y=0):
         start_date = X[self.date_col].min()

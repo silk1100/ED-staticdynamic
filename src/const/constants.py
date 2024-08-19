@@ -1,8 +1,8 @@
 import os
 import sys
-# sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
-SRC_PATH = os.getenv("EDStaticDynamic")
-sys.path.insert(1, SRC_PATH)
+sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
+# SRC_PATH = os.getenv("EDStaticDynamic")
+# sys.path.insert(1, SRC_PATH)
 import polars as pl
 
 
@@ -10,12 +10,13 @@ import polars as pl
 # RAW_DATA = '/work/InternalMedicine/s223850/raw_data/ED Events - 11.21.23.csv'
 # RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events - 12.21.23.csv'
 # RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24.csv'
-# RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 6.6.24.csv'
-# CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED_EVENTS_6624_clean.joblib'
+RAW_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 6.6.24.csv'
+CLEAN_DATA = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED_EVENTS_6624_clean.joblib'
+CLEAN_DATA_PARQUET = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED_EVENTS_6624_clean.parquet'
 
-RAW_DATA = os.path.join(SRC_PATH, 'ED Events Last 2 Years - compiled 6.6.24.csv')
-CLEAN_DATA = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.joblib')
-CLEAN_DATA_PARQUET = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.parquet')
+# RAW_DATA = os.path.join(SRC_PATH, 'ED Events Last 2 Years - compiled 6.6.24.csv')
+# CLEAN_DATA = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.joblib')
+# CLEAN_DATA_PARQUET = os.path.join(SRC_PATH, 'ED_EVENTS_6624_clean.parquet')
 
 # RAW_DATA_SAMPLE = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24_sample.csv'
 
@@ -67,6 +68,31 @@ dynamic_multival_col =[
     "dxcode_list"
 ]
 
+dynamic_num_cols = [
+   'elapsed_time_min',
+   'event_idx',
+   'MEAS_VALUE_Temp',
+   'MEAS_VALUE_Weight',
+   'MEAS_VALUE_BP (MAP)',
+   'MEAS_VALUE_(0-10) Pain Rating: Activity',
+   'MEAS_VALUE_BMI (Calculated)',
+   'MEAS_VALUE_BSA (Dubois Calc)',
+   'MEAS_VALUE_(0-10) Pain Rating: Rest',
+]
+
+dynamic_num_norm_method = {
+   'elapsed_time_min':'std',
+   'event_idx':'std',
+   'MEAS_VALUE_Temp':'std',
+   'MEAS_VALUE_Weight':'std',
+   'MEAS_VALUE_BP (MAP)':'std',
+   'MEAS_VALUE_(0-10) Pain Rating: Activity':'minmax',
+   'MEAS_VALUE_BMI (Calculated)':'std',
+   'MEAS_VALUE_BSA (Dubois Calc)':'std',
+   'MEAS_VALUE_(0-10) Pain Rating: Rest':'minmax'
+    
+}
+
 dynamic_cols = [
     "Type_NORM",
     "EVENT_NAME_NORM",
@@ -101,9 +127,9 @@ dynamic_cols = [
 
 # ==================================================== Clean =======================================================
 spo2 = [67, 100]
-temp = [60, 115]
-pulse = [27, 600]
-BMI = [1, 400]
+temp = [96, 106]
+pulse = [45, 180]
+BMI = [10, 500]
 Resp = [1, 100]
 
 vital_ranges_dict = {
@@ -143,15 +169,25 @@ static_num_cols = [
     "Number of past appointments in last 60 days",
     "Number of past inpatient admissions over ED visits in last three years"
 ]
+static_num_norm_method = {
+    'arr_year': 'std',
+    'Dispo_Prov_Admission_Rate': 'std',
+    "Number of Inpatient Admissions in the last 30 Days": 'std',
+    "Number of past appointments in last 60 days": 'std',
+    "Number of past inpatient admissions over ED visits in last three years": 'minmax'
+}
 # =============================================== ML =======================================================
-TRAINING_PERIOD = 8
-TESTING_PERIOD  = 4 
+OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/ml_results'
+FS_OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/fs_results'
 
-DS_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_ds_parallel")
-ML_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_feats")
-ML_DATA_OUTPUT_ID = os.path.join(OUTPUT_DIR, "static_dynamic_feats_ID_240324")
+# TRAINING_PERIOD = 8
+# TESTING_PERIOD  = 4 
 
-DL_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_dl_output")
-DL_FEATS_DIR =  os.path.join(OUTPUT_DIR, 'static_dynamic_dl_feats')
-ML_RESULTS_OUTPUT = os.path.join(OUTPUT_PROJ_DIR, "ml_results_240324")
+# DS_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_ds_parallel")
+# ML_DATA_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_feats")
+# ML_DATA_OUTPUT_ID = os.path.join(OUTPUT_DIR, "static_dynamic_feats_ID_240324")
+
+# DL_OUTPUT = os.path.join(OUTPUT_DIR, "static_dynamic_dl_output")
+# DL_FEATS_DIR =  os.path.join(OUTPUT_DIR, 'static_dynamic_dl_feats')
+# ML_RESULTS_OUTPUT = os.path.join(OUTPUT_PROJ_DIR, "ml_results_240324")
 #===========================================================================================================

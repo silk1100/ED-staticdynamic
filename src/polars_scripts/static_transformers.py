@@ -1,3 +1,4 @@
+from multiprocessing.sharedctypes import Value
 import os
 import sys
 
@@ -9,12 +10,13 @@ import numpy as np
 from const import constants
 import joblib
 import time
+from warnings import warn
 
 
 class CustomOneHotEncoding:
-    def __init__(self, single_val_cols, multi_val_cols, dep_col_dict={},
+    def __init__(self, single_val_cols, multi_val_cols, dep_col_dict={}, num_cols=[],
                  skip_indp_val=set(),
-                 vocabthresh=100, cumprob_inc_thresh=0.99,
+                 vocabthresh=100, cumprob_inc_thresh=0.99, num_norm_method={},
                  null_vals=[]):
         '''
             multi_val_cols are expected to be passed in a list datastructure. null values in the data should be mapped to empty list
@@ -23,12 +25,27 @@ class CustomOneHotEncoding:
         self.single_val_cols = single_val_cols
         self.multi_val_cols = multi_val_cols
         self.dep_col_dict = dep_col_dict
+
+        self.num_cols = num_cols
+        self.num_norm_method = num_norm_method
+        self._adjust_num_norm_method(["std", "minmax"])
+
         self.vocab_thr = vocabthresh
         self.inc_thr = cumprob_inc_thresh
         self.skip_indp_val = skip_indp_val
         self.fitted = False
         self.null_vals = null_vals
 
+    def _adjust_num_norm_method(self, allowed_methods: list):
+        for c in self.num_cols:
+            if c not in self.num_norm_method:
+                self.num_norm_method[c] = 'std'
+                warn(f"{c} is supposed to be processed as a numerical variable. However the processing method is not "
+                     "specified in the num_norm_method dictionary. Therefore, it is assigned to 'std' ...")
+            elif self.num_norm_method[c] not in allowed_methods:
+                raise ValueError(f"Numerical preprocessing methods supproted are {allowed_methods}. "
+                                 f"{self.num_norm_method[c]} is passed for column {c} ...")
+                
     def _vocab_from_list(self, inc_series):
         inc_vals = set(inc_series)
         for v in self.null_vals:
@@ -99,6 +116,9 @@ class CustomOneHotEncoding:
         for col in self.multi_val_cols:
             assert col in X.columns, f'{col} is supposed to be processed as a multi valued column using CustomOneHotEncoding. However it doesnt exist in the passed X'
 
+        for col in self.num_cols:
+            assert col in X.columns, f'{col} is supposed to be processed as a numerical valued column using {self.num_norm_method}. However it doesnt exist in the passed X'
+
         for col in self.dep_col_dict:
             assert col in X.columns, f'{col} is supposed to be processed as an independent column using CustomOneHotEncoding. However it doesnt exist in the passed X'
             for c in self.dep_col_dict[col]:
@@ -107,6 +127,7 @@ class CustomOneHotEncoding:
         # Create dictionaries
         self.singleval_vocab_, self.multi_val_vocab_ = self._build_vocab(X)
         
+        self.num_dict = self._calc_norm(X)
         '''
         self.dep_vocab[{indepent_colname}][{dependent_colname}][{indepent_value}][{'depenedent_vocab'}]
         '''
@@ -115,6 +136,41 @@ class CustomOneHotEncoding:
         
         return self
     
+    def _calc_norm(self, X:pl.DataFrame):
+        num_cols = {}
+        for c in self.num_cols:
+            if self.num_norm_method[c] == 'std':
+                num_cols[c] = (X[c].mean(), X[c].std(ddof=1), 'std')
+            elif self.num_norm_method[c] == 'minmax':
+                num_cols[c] = (X[c].min(), X[c].max(), 'minmax')
+            else:
+                raise ValueError(f"Normalization methods supported are ['std', 'minmax']. {self.num_norm_method} is passed ...")
+        
+        return num_cols
+    
+    def _transfom_num_cols(self, X):
+        for c, (v1, v2, method) in self.num_dict.items():
+            if method == 'std':
+                if v2 == 0:
+                    X = X.with_columns(
+                        pl.lit(0).alias(f'{c}_NUMNORM')
+                    )
+                else: 
+                    X = X.with_columns(
+                        ((pl.col(c)-v1)/(v2+(1e-9))).alias(f'{c}_NUMNORM')
+                    )
+            elif method == 'minmax':
+                if v1 == v2:
+                    X = X.with_columns(
+                        pl.lit(0).alias(f'{c}_NUMNORM')
+                    )
+                else:
+                    X = X.with_columns(
+                        ((pl.col(c)-v1)/(v2-v1+1e-9)).alias(f'{c}_NUMNORM')
+                    )
+        return X
+        
+
     def _transform_single_val(self, series, vocab):
         X = np.zeros((len(series), len(vocab)), dtype=np.uint16)
         for idx, v in enumerate(series):
@@ -171,6 +227,9 @@ class CustomOneHotEncoding:
         if not self.fitted:
             raise ValueError("You need to run .fit() method first")
 
+        if len(self.num_cols) > 0:
+            X = self._transfom_num_cols(X)
+
         X_singval_res = []
         s_colnames = []
         for col, vocab in self.singleval_vocab_.items():
@@ -202,6 +261,8 @@ class CustomOneHotEncoding:
         df_depval = pl.DataFrame(X_depval, schema=dep_colnames)
         df_singval = pl.DataFrame(X_singval, schema=s_colnames)
         df_multval = pl.DataFrame(X_multval, schema=m_colnames)
+        if len(self.num_cols) > 0:
+            return pl.concat([df_singval, df_multval, df_depval, X.select(self.num_cols)], how='horizontal')
         return pl.concat([df_singval, df_multval, df_depval], how='horizontal')
 
     def fit_transform(self, X, y=None):

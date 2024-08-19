@@ -8,3 +8,5 @@ dl_jobs
 **/__pycache__
 **/*.parquet
 *.parquet
+*.err
+*.out
