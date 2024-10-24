@@ -265,7 +265,8 @@ class CustomDynamicOneHotEncoding:
         df_multval = pl.DataFrame(X_multval, schema=m_colnames)
 
         if len(self.num_cols) > 0:
-            df_transformed = pl.concat([df_singval, df_multval, df_depval, X.select(self.num_cols)], how='horizontal')
+            self.num_norm_cols_ = [col+"_NUMNORM" for col in self.num_cols]
+            df_transformed = pl.concat([df_singval, df_multval, df_depval, X.select(self.num_norm_cols_)], how='horizontal')
         else:
             df_transformed = pl.concat([df_singval, df_multval, df_depval], how='horizontal')
         # df_transformed = pl.concat([X, df_singval, df_multval, df_depval], how='horizontal')

@@ -4,6 +4,7 @@ sys.path.insert(1, '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src')
 # SRC_PATH = os.getenv("EDStaticDynamic")
 # sys.path.insert(1, SRC_PATH)
 import polars as pl
+from pathlib import Path
 
 
 # =============================================== DATA =======================================================
@@ -21,7 +22,7 @@ CLEAN_DATA_PARQUET = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/E
 # RAW_DATA_SAMPLE = '/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 5.28.24_sample.csv'
 
 WORKING_DIR = '/home2/s223850/ED/UTSW_ED_EVENTBASED_staticDynamic/src'
-OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/'
+# OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/'
 OUTPUT_PROJ_DIR = '/project/InternalMedicine/Basit_lab/s223850/ED-StaticDynamic' 
 
 # TARGET = ['Admitted_YN'] Before 12_1_23
@@ -78,6 +79,9 @@ dynamic_num_cols = [
    'MEAS_VALUE_BMI (Calculated)',
    'MEAS_VALUE_BSA (Dubois Calc)',
    'MEAS_VALUE_(0-10) Pain Rating: Rest',
+   'MEAS_VALUE_SpO2',
+   'MEAS_VALUE_Resp',
+   'MEAS_VALUE_Pulse'
 ]
 
 dynamic_num_norm_method = {
@@ -89,7 +93,10 @@ dynamic_num_norm_method = {
    'MEAS_VALUE_(0-10) Pain Rating: Activity':'minmax',
    'MEAS_VALUE_BMI (Calculated)':'std',
    'MEAS_VALUE_BSA (Dubois Calc)':'std',
-   'MEAS_VALUE_(0-10) Pain Rating: Rest':'minmax'
+   'MEAS_VALUE_(0-10) Pain Rating: Rest':'minmax',
+   'MEAS_VALUE_SpO2':'std',
+   'MEAS_VALUE_Resp':'std',
+   'MEAS_VALUE_Pulse':'std'
     
 }
 
@@ -169,6 +176,7 @@ static_num_cols = [
     "Number of past appointments in last 60 days",
     "Number of past inpatient admissions over ED visits in last three years"
 ]
+
 static_num_norm_method = {
     'arr_year': 'std',
     'Dispo_Prov_Admission_Rate': 'std',
@@ -179,6 +187,10 @@ static_num_norm_method = {
 # =============================================== ML =======================================================
 OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/ml_results'
 FS_OUTPUT_DIR = '/work/InternalMedicine/s223850/ED-StaticDynamic/fs_results'
+CUSTOM_MODEL_OUTPUT = '/work/InternalMedicine/s223850/ED-StaticDynamic/custom_model'
+FINAL_MODEL_OUTPUT = '/work/InternalMedicine/s223850/ED-StaticDynamic/final_output_sep2024'
+Path(CUSTOM_MODEL_OUTPUT).mkdir(parents=True, exist_ok=True)
+Path(FINAL_MODEL_OUTPUT).mkdir(parents=True, exist_ok=True)
 
 # TRAINING_PERIOD = 8
 # TESTING_PERIOD  = 4 

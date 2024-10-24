@@ -12,6 +12,7 @@ from pandas.tseries.holiday import USFederalHolidayCalendar
 import pandas as pd
 from typing import List
 import joblib
+from datacleaner import DataCleaner
 
 USCal = USFederalHolidayCalendar()
 
@@ -295,4 +296,8 @@ def create_sample_df(input_path, output_path, id_col, n_samples):
 
 if __name__ == "__main__":
     df = read_and_clean(constants.RAW_DATA, infer_length=int(20e6))
+    dc = DataCleaner(constants.RAW_DATA)
+    df1 = dc.run()
+    for c in df.columns:
+        assert(all(df[c].drop_nulls()==df1[c].drop_nulls()))
     df.write_parquet(constants.CLEAN_DATA_PARQUET)

@@ -17,13 +17,33 @@ class CustomCrossFold:
     '''
      
     '''
-    def __init__(self, train_period_in_days, test_period_in_days, step_in_days, date_col):
-        self.tr = train_period_in_days
-        self.te = test_period_in_days
-        self.step = step_in_days 
+    def __init__(self, train_period_in_days, test_period_in_days, step_in_days, date_col, max_folds=None):
+        self.tr = int(train_period_in_days)
+        self.te = int(test_period_in_days)
+        self.step = step_in_days
+        if self.step is None:
+            self.step = self.te
+        self.step = int(self.step)
         self.date_col = date_col
 
-    def split(self, X,  y=0):
+    def get_latest_batch(self, X, n_days=None):
+        start_date = X[self.date_col].min()
+        end_date = X[self.date_col].max()
+        date_ranges = pl.datetime_range(start_date, end_date, interval=f'{self.step}d', eager=True)
+        date_ranges = list(map(lambda x: x.date(), date_ranges))
+
+        X = X.with_columns(
+            pl.col(self.date_col).dt.date().alias(f'{self.date_col}_date')
+        )
+
+        if n_days is None:
+            n_days = self.tr
+
+        Xtre = X.filter( (pl.col(f'{self.date_col}_date')<=end_date)&(pl.col(f'{self.date_col}_date')>=end_date-dt.timedelta(days=n_days)) )
+        return Xtre.drop(f'{self.date_col}_date')
+        
+
+    def reverse_split(self, X, y=0, max_iter=None):
         start_date = X[self.date_col].min()
         end_date = X[self.date_col].max()
         date_ranges = pl.datetime_range(start_date, end_date, interval=f'{self.step}d', eager=True)
@@ -31,12 +51,36 @@ class CustomCrossFold:
         X = X.with_columns(
             pl.col(self.date_col).dt.date().alias(f'{self.date_col}_date')
         )
+        date_ranges = date_ranges[::-1]
+        idx = 0
+        for idx in range(0, len(date_ranges)):
+            Xte = X.filter( (pl.col(f'{self.date_col}_date')<=date_ranges[idx])&(pl.col(f'{self.date_col}_date')>=date_ranges[idx]-dt.timedelta(days=self.te)) )
+            Xtr = X.filter( (pl.col(f'{self.date_col}_date')<date_ranges[idx]-dt.timedelta(days=self.te))&
+                          (pl.col(f'{self.date_col}_date')>=date_ranges[idx]-dt.timedelta(days=self.tr)-dt.timedelta(days=self.te)) )
+            yield Xtr.drop(f'{self.date_col}_date'), Xte.drop(f'{self.date_col}_date')
+            idx += 1
+            if max_iter is not None and idx>=max_iter:
+                break
+        
+    
+    def split(self, X,  y=0, max_iter=None):
+        start_date = X[self.date_col].min()
+        end_date = X[self.date_col].max()
+        date_ranges = pl.datetime_range(start_date, end_date, interval=f'{self.step}d', eager=True)
+        date_ranges = list(map(lambda x: x.date(), date_ranges))
+        X = X.with_columns(
+            pl.col(self.date_col).dt.date().alias(f'{self.date_col}_date')
+        )
+        idx = 0
         for idx in range(0, len(date_ranges)):
             Xtr = X.filter( (pl.col(f'{self.date_col}_date')>=date_ranges[idx])&
                           (pl.col(f'{self.date_col}_date')<=date_ranges[idx]+dt.timedelta(days=self.tr)))
             Xte = X.filter( (pl.col(f'{self.date_col}_date')>date_ranges[idx]+dt.timedelta(days=self.tr))&
                           (pl.col(f'{self.date_col}_date')<=date_ranges[idx]+dt.timedelta(days=self.tr+self.te)))
             yield Xtr.drop(f'{self.date_col}_date'), Xte.drop(f'{self.date_col}_date')
+            idx += 1
+            if max_iter is not None and idx>=max_iter:
+                break
 
 class CustomEDSampling:
     def __init__(self, max_num_pts, is_time_based, sample_col, step):

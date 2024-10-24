@@ -185,24 +185,160 @@ def train_preprocess(Xtr_t, Xte_t, pat_id, static_preprocessor, dynamic_preproce
     
     return  (Xstr, Xdtr_pat), (Xste, Xdte_pat)
 
-def train1(
+def get_estimator(estimator_dict:dict):
+    # if isinstance(estimator_dict, list):
+    #     raise NotImplementedError("Not implemented yet. Make sure to create one one isntance of estimator name and estimator_args")
+    if estimator_dict['name'] == 'catboost':
+        return CatBoostClassifier(**estimator_dict['estimator_args'])
+    elif estimator_dict['name'] == 'logistic_regression':
+        return LogisticRegression(**estimator_dict['estimator_args'])
+    else:
+        raise ValueError(f"Only supporting LogisticRegression and CatBoostClassifier [logistic_regression, catboost]...")
+        
+        
+
+def run_rfecv01(model_dict, model_args, static_data, dynamic_data, comb_data):
+    srfecv = None
+    drfecv = None
+    crfecv = None
+    if model_dict['static'] is not None and static_data is not None:
+        warn(f"Training {model_dict['static']['name']} static feature selector ... ")
+        static_model = get_estimator(model_dict['static'])
+        srfecv = RFECV(static_model, step=static_data['step'], **model_args)
+        srfecv.fit(static_data['X_train'].to_pandas(), static_data['labels'])
+        id_ = static_data['id']
+    if model_dict['dynamic'] is not None and dynamic_data is not None:
+        warn(f"Training {model_dict['dynamic']['name']} dynamic feature selector ... ")
+        dynamic_model = get_estimator(model_dict['dynamic'])
+        drfecv = RFECV(dynamic_model, step=dynamic_data['step'], **model_args)
+        drfecv.fit(dynamic_data['X_train'].to_pandas(), dynamic_data['labels'])
+        id_ = dynamic_data['id']
+    
+    if model_dict['comb'] is not None and comb_data is not None:
+        warn(f"Training {model_dict['comb']['name']} comb feature selector ... ")
+        comb_model = get_estimator(model_dict['comb'])
+        crfecv = RFECV(comb_model, step=comb_data['step'], cv=3, **model_args)
+        crfecv.fit(comb_data['X_train'].to_pandas(), comb_data['labels'])
+        id_ = comb_data['id']
+
+    rfecv_output = { 
+        'static_model':srfecv,
+        'dynamic_model':drfecv,
+        'comb_model':crfecv,
+        'static_feats':static_data['cols'] if static_data is not None else None,
+        'dynamic_feats':dynamic_data['cols'] if dynamic_data is not None else None,
+        'comb_feats':comb_data['cols'] if comb_data is not None else None,
+        'train_pat_id': id_,
+        'test_pat_id': id_
+    }
+
+    return rfecv_output
+    
+
+from typing import Tuple
+def static_dynamic_rfcev01(
+    model_dict,
+    train_mats:Tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, list], id_col='PAT_ENC_CSN_ID', feat_types='all', colnames=None
+):
+    
+    model_args = {k: v for k, v in model_dict['method_args'].items() if k!='step'}
+    X_static_train, X_dynamic_train, X_comb_train, train_label_list = train_mats
+    if X_static_train is not None:
+        pat_ids = X_static_train[id_col]
+        static_cols = X_static_train.drop([id_col]).columns
+        if isinstance(model_dict['method_args']['step'], float):
+            static_step = int(model_dict['method_args']['step']*X_static_train.shape[1])
+        else:
+            static_step = model_dict['method_args']['step']
+
+        static_data = dict(
+            X_train = X_static_train.drop([id_col]),
+            labels = train_label_list,
+            cols=static_cols,
+            id=pat_ids,            
+            step=static_step
+        )
+    else:
+        static_data = None
+
+    if X_dynamic_train is not None:
+        pat_idd = X_dynamic_train[id_col]
+        dynamic_cols = X_dynamic_train.drop([id_col]).columns
+        if isinstance(model_dict['method_args']['step'], float):
+            dynamic_step = int(model_dict['method_args']['step']*X_dynamic_train.shape[1])
+        else:
+            dynamic_step = model_dict['method_args']['step']
+        dynamic_data = dict(
+            X_train=X_dynamic_train.drop([id_col]),
+            labels=train_label_list,
+            col=dynamic_cols,
+            id=pat_idd,            
+            step=dynamic_step
+        )
+    else:
+        dynamic_data = None
+
+    if X_comb_train is not None:
+        pat_idc = X_comb_train[id_col]
+        comb_cols = X_comb_train.drop([id_col]).columns 
+        if isinstance(model_dict['method_args']['step'], float):
+            comb_step = int(model_dict['method_args']['step']*X_comb_train.shape[1])
+        else:
+            comb_step = model_dict['method_args']['step']
+        comb_data = dict(
+            X_train=X_comb_train.drop([id_col]),
+            labels=train_label_list,
+            cols=comb_cols,
+            id=pat_idc,
+            step=comb_step
+        )
+    else:
+        comb_data = None
+
+    if X_static_train is not None and X_dynamic_train is not None:
+        assert all(pat_ids==pat_idd), f'{id_col} of static and dynamic do not allign'
+    if X_static_train is not None and X_comb_train is not None:
+        assert all(pat_ids==pat_idc), f'{id_col} of static and combined do not allign' 
+    if X_dynamic_train is not None and X_comb_train is not None:
+        assert all(pat_idd==pat_idc), f'{id_col} of dynamic and combined do not allign' 
+
+    rfecv_output = run_rfecv01(model_dict, model_args, static_data, dynamic_data, comb_data)
+
+    return rfecv_output
+
+
+def static_dynamic_rfcev(
     static_model,
     dynamic_model,
     comb_model,
-    train_mats, colnames, model_name=""
+    train_mats:Tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, list], colnames=None, model_name=""
 ):
     
-    X_static_train_np, X_dynamic_train_np, comb_train_np, train_label_list = train_mats
-    static_cols, dynamic_cols, comb_cols = colnames
-    srfecv = RFECV(static_model, step=20, cv=5, scoring='balanced_accuracy')
-    drfecv = RFECV(dynamic_model, step=30, cv=5, scoring='balanced_accuracy')
-    crfecv = RFECV(comb_model, step=50, cv=5, scoring='balanced_accuracy')
+    X_static_train, X_dynamic_train, X_comb_train, train_label_list = train_mats
+    pat_ids = X_static_train['PAT_ENC_CSN_ID']
+    pat_idd = X_dynamic_train['PAT_ENC_CSN_ID']
+    pat_idc = X_comb_train['PAT_ENC_CSN_ID']
+    assert all(pat_ids==pat_idd), 'PAT_ENC_CSN_ID of static and dynamic do not allign'
+    assert all(pat_ids==pat_idc), 'PAT_ENC_CSN_ID of static and combined do not allign'
+    
+    
+    
+    static_cols = X_static_train.drop(['PAT_ENC_CSN_ID']).columns
+    dynamic_cols = X_dynamic_train.drop(['PAT_ENC_CSN_ID']).columns
+    comb_cols = X_comb_train.drop(['PAT_ENC_CSN_ID']).columns 
+            
+    static_step = int(0.05*X_static_train.shape[1])
+    dynamic_step = int(0.05*X_dynamic_train.shape[1])
+    comb_step = int(0.05*X_comb_train.shape[1])
+    srfecv = RFECV(static_model, step=static_step, cv=3, scoring='balanced_accuracy')
+    drfecv = RFECV(dynamic_model, step=dynamic_step, cv=3, scoring='balanced_accuracy')
+    crfecv = RFECV(comb_model, step=comb_step, cv=3, scoring='balanced_accuracy')
     warn(f"Training {model_name} static feature selector ... ")
-    srfecv.fit(X_static_train_np, train_label_list)
+    srfecv.fit(X_static_train.drop(['PAT_ENC_CSN_ID']), train_label_list)
     warn(f"Training {model_name} dynamic feature selector ... ")
-    drfecv.fit(X_dynamic_train_np, train_label_list)
+    drfecv.fit(X_dynamic_train.drop(['PAT_ENC_CSN_ID']), train_label_list)
     warn(f"Training {model_name} comb feature selector ... ")
-    crfecv.fit(comb_train_np, train_label_list)
+    crfecv.fit(X_comb_train.drop(['PAT_ENC_CSN_ID']), train_label_list)
 
     return {
        'static_model':srfecv,
@@ -211,9 +347,10 @@ def train1(
        'static_feats':static_cols,
        'dynamic_feats':dynamic_cols,
        'comb_feats':comb_cols,
-       'train_pat_id': Xstr['PAT_ENC_CSN_ID'].to_numpy(),
-       'test_pat_id': Xste['PAT_ENC_CSN_ID'].to_numpy()
+       'train_pat_id': pat_idc.to_numpy(),
+       'test_pat_id': pat_idc.to_numpy()
     }
+
 
 if __name__ == "__main__":
     # with open(constants.CLEAN_DATA, 'rb') as f:
@@ -338,12 +475,12 @@ if __name__ == "__main__":
             #                          XGBClassifier(verbosity=0, n_jobs=12),
             #                         gtree_train_mats, gtree_colnames, "xgboost")
 
-            cat_score_model = train1(CatBoostClassifier(verbose=0, thread_count=12, iterations=500),
+            cat_score_model = static_dynamic_rfcev(CatBoostClassifier(verbose=0, thread_count=12, iterations=500),
                                      CatBoostClassifier(verbose=0, thread_count=12, iterations=500),
                                      CatBoostClassifier(verbose=0, thread_count=12, iterations=500),
                                     gtree_train_mats, gtree_colnames, "catboost")
 
-            lg_score_model = train1(LogisticRegression(n_jobs=12), LogisticRegression(n_jobs=12), LogisticRegression(n_jobs=12),
+            lg_score_model = static_dynamic_rfcev(LogisticRegression(n_jobs=12), LogisticRegression(n_jobs=12), LogisticRegression(n_jobs=12),
                                     lin_train_mats, lin_colnames, 'logisticregression')
 
             cat_score_list.append(cat_score_model)

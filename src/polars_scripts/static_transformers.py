@@ -1,4 +1,3 @@
-from multiprocessing.sharedctypes import Value
 import os
 import sys
 
@@ -262,7 +261,8 @@ class CustomOneHotEncoding:
         df_singval = pl.DataFrame(X_singval, schema=s_colnames)
         df_multval = pl.DataFrame(X_multval, schema=m_colnames)
         if len(self.num_cols) > 0:
-            return pl.concat([df_singval, df_multval, df_depval, X.select(self.num_cols)], how='horizontal')
+            self.num_norm_cols_ = [col+"_NUMNORM" for col in self.num_cols]
+            return pl.concat([df_singval, df_multval, df_depval, X.select(self.num_norm_cols_)], how='horizontal')
         return pl.concat([df_singval, df_multval, df_depval], how='horizontal')
 
     def fit_transform(self, X, y=None):

@@ -1,0 +1,243 @@
+experiment:
+  type: "latest" # ['latest', 'folds'] 
+  no_validation: False
+  model_type: "static" # ["comb", "static", "dynamic", 'all']
+  tidx_method: "list" # [generator, list, None]
+  tidx_list: # None 
+    - 30
+    - 60
+  tidx_start: 30 # None
+  tidx_step: 30 #None
+  tidx_end: 960 #None
+  apply_fs: True
+  id_col: "PAT_ENC_CSN_ID"
+  target_col: "has_admit_order"
+  output_dir: "/work/InternalMedicine/s223850/ED-StaticDynamic/config_output"
+  output_labelByDate: False
+  output_labelCustom: "test" # If you want a custom label such as "latest" makesure to set output_labelByDate to False
+
+  pretrained_dir: null # Used if you want to load objects to be reused 
+
+data_cleaner:
+  # filepath: "/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/ED Events Last 2 Years - compiled 6.6.24.csv"
+  # filepath: "/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/latest_test.csv"
+  filepath: "/work/InternalMedicine/s223850/ED-StaticDynamic/raw_data/latest_test.parquet"
+  datetime_cols: 
+    - "Calculated_DateTime"
+    - "Arrived_Time"
+  datetime_format: "%Y-%m-%d %H:%M:%S"
+  id_col: "PAT_ENC_CSN_ID"
+  null_values:
+    column_name1: 
+      - null
+      - "NA"
+      - "Null"
+      - "None"
+    column_name2: 
+      - "?"
+      - "-"
+  admission_keywords: 
+    - "admitted"
+    - "hospitalized"
+    - "inpatient"
+  discharge_keywords: 
+    - "discharged"
+    - "released"
+  main_arrival_time_column: "arrival_time"
+
+data_preprocessing:
+  loadfrom: null  # Used to load files from <pretrained_dir>
+  saveto: "dp" # Only name of the file, it will be appended to the output_dir/output_label/<saveto>.joblib
+  preprocess: "static" #[all, static, dynamic]
+  static_preprocessor:
+    single_val_cols: 
+      - "Ethnicity"
+      - "FirstRace"
+      - "Sex"
+      - "Acuity_Level"
+      - "Means_Of_Arrival"
+      - "Coverage_Financial_Class_Grouper"
+      - "arr_month"
+      - "arr_day"
+      - "arr_hour"
+      - "holiday"
+      - "arr_dow"
+    multi_val_cols: 
+      - "cc_list"
+    num_cols: 
+      - "arr_year"
+      - "Dispo_Prov_Admission_Rate"
+      - "Number of Inpatient Admissions in the last 30 Days"
+      - "Number of past appointments in last 60 days"
+      - "Number of past inpatient admissions over ED visits in last three years"
+    num_norm_method:
+      arr_year: "std"
+      Dispo_Prov_Admission_Rate: "std"
+      Number_of_Inpatient_Admissions_in_the_last_30_Days: "std"
+      Number_of_past_appointments_in_last_60_days: "std"
+      Number_of_past_inpatient_admissions_over_ED_visits_in_last_three_years: "minmax"
+    null_vals: 
+      - null
+      - None
+      - "none"
+      - "null"
+      - "unknown"
+      - "undefined"
+      - "*unspecified"
+      - "unspecified"
+    vocabthresh: 100
+    dep_col_dict: {}
+    cumprob_inc_thresh: 0.99
+
+  dynamic_preprocessor:
+    single_val_cols: 
+      - "Type_NORM"
+      - "EVENT_NAME_NORM"
+    multi_val_cols: 
+      - "dxcode_list"
+    id_col: "PAT_ENC_CSN_ID"
+    dep_col_dict: 
+      Type_NORM:
+        - "EVENT_NAME_NORM"
+    num_cols: 
+      - "elapsed_time_min"
+      - "event_idx"
+      - "MEAS_VALUE_Temp"
+      - "MEAS_VALUE_Weight"
+      - "MEAS_VALUE_BP (MAP)"
+      - "MEAS_VALUE_(0-10) Pain Rating: Activity"
+      - "MEAS_VALUE_BMI (Calculated)"
+      - "MEAS_VALUE_BSA (Dubois Calc)"
+      - "MEAS_VALUE_(0-10) Pain Rating: Rest"
+      - "MEAS_VALUE_SpO2"
+      - "MEAS_VALUE_Resp"
+      - "MEAS_VALUE_Pulse"
+    num_norm_methods:
+      elapsed_time_min: "std"
+      event_idx: "std"
+      MEAS_VALUE_Temp: "std"
+      MEAS_VALUE_Weight: "std"
+      "MEAS_VALUE_BP (MAP)": "std"  # Corrected here
+      "MEAS_VALUE_(0-10) Pain Rating: Activity": "minmax"  # Corrected here
+      "MEAS_VALUE_BMI (Calculated)": "std"  # Corrected here
+      "MEAS_VALUE_BSA (Dubois Calc)": "std"  # Corrected here
+      "MEAS_VALUE_(0-10) Pain Rating: Rest": "minmax"  # Corrected here
+      MEAS_VALUE_SpO2: "std"
+      MEAS_VALUE_Resp: "std"
+      MEAS_VALUE_Pulse: "std"
+    skip_indp_val: 
+      - "vitals"
+    vocabthresh: 100
+    cumprob_inc_thresh: 0.99
+    null_vals: 
+      - null
+      - None
+      - "none"
+      - "null"
+      - "unknown"
+      - "undefined"
+      - "*unspecified"
+      - "unspecified"
+
+  s_imp:
+    cols:
+      - "arr_year"
+      - "Dispo_Prov_Admission_Rate"
+      - "Number of Inpatient Admissions in the last 30 Days"
+      - "Number of past appointments in last 60 days"
+      - "Number of past inpatient admissions over ED visits in last three years"
+    impute_norm: False,
+    id_col: 'PAT_ENC_CSN_ID'
+    target_col: 'has_admit_order'
+  d_imp:
+    impute_norm: False,
+    id_col: 'PAT_ENC_CSN_ID'
+    target_col: 'has_admit_order'
+    cols:
+      - "elapsed_time_min"
+      - "event_idx"
+      - "MEAS_VALUE_Temp"
+      - "MEAS_VALUE_Weight"
+      - "MEAS_VALUE_BP (MAP)"
+      - "MEAS_VALUE_(0-10) Pain Rating: Activity"
+      - "MEAS_VALUE_BMI (Calculated)"
+      - "MEAS_VALUE_BSA (Dubois Calc)"
+      - "MEAS_VALUE_(0-10) Pain Rating: Rest"
+      - "MEAS_VALUE_SpO2"
+      - "MEAS_VALUE_Resp"
+      - "MEAS_VALUE_Pulse"
+
+folds:
+  date_col: "Arrived_Time"
+  training_in_months: 6
+  testing_in_months: 6
+  steps_in_months: 6
+
+feature_selector:
+  loadfrom: null  # Used to load files from <pretrained_dir>
+  saveto: "fs" # Only name of the file, it will be appended to the output_dir/output_label/<saveto>.joblib
+  with_imputation: True
+  model_params:
+    method: "RFECV"  # Recursive Feature Elimination with Cross-Validation
+    method_args:
+      step: 1  # Number of features to remove at each iteration
+      min_features_to_select: 5  # Minimum number of features to select
+      cv: 2 # Number of cross-validation folds
+      scoring: "balanced_accuracy"  # Scoring method (e.g., accuracy, f1, roc_auc)
+      n_jobs: 1  # Number of jobs to run in parallel (-1 uses all processors)
+      verbose: 1  # Controls verbosity of output during fitting
+
+    static:
+      name: "logistic_regression"
+      estimator_args:
+        penalty: "l2" 
+        C: 1.0
+        n_jobs: 1
+        max_iter: 300
+        verbose: 1
+    dynamic:
+      name: "catboost"
+      estimator_args:
+        thread_count: 12
+        verbose: 0
+        iterations: 50
+    comb: null
+
+machine_learning:
+  loadfrom: null
+  saveto: "ml"
+  static:
+    model_name: "catboost"  # CatBoost classifier
+    hyperparameters:
+      iterations: 1000  # Default number of iterations
+      learning_rate: 0.03  # Default learning rate
+      depth: 6  # Default depth of trees
+      loss_function: "Logloss"  # Default loss function for classification
+      eval_metric: "AUC"  # Default evaluation metric for binary classification
+      random_seed: 42  # Random seed for reproducibility
+      logging_level: "Silent"  # No logging output
+      thread_count: -1  # Use all available CPU threads
+
+  dynamic: null 
+    # model_name: "catboost"
+    # hyperparameters:
+    #   iterations: 1000  # Default number of iterations
+    #   learning_rate: 0.03  # Default learning rate
+    #   depth: 6  # Default depth of trees
+    #   loss_function: "Logloss"  # Default loss function for classification
+    #   eval_metric: "AUC"  # Default evaluation metric for binary classification
+    #   random_seed: 42  # Random seed for reproducibility
+    #   logging_level: "Silent"  # No logging output
+    #   thread_count: -1  # Use all available CPU threads
+
+  comb: null 
+    # model_name: "catboost"
+    # hyperparameters:
+    #   iterations: 1000  # Default number of iterations
+    #   learning_rate: 0.03  # Default learning rate
+    #   depth: 6  # Default depth of trees
+    #   loss_function: "Logloss"  # Default loss function for classification
+    #   eval_metric: "AUC"  # Default evaluation metric for binary classification
+    #   random_seed: 42  # Random seed for reproducibility
+    #   logging_level: "Silent"  # No logging output
+    #   thread_count: -1  # Use all available CPU threads
